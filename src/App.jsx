@@ -569,6 +569,7 @@ export default function App() {
                           <div className="flex justify-between items-center text-sm border-t border-slate-700/50 pt-2 mt-2">
                             <div className="text-slate-400">Target: <span className="text-slate-200">{analysis.prediction?.outcome}</span></div>
                             <div className="text-slate-400">Est: <span className="text-slate-200">{analysis.value_assessment?.my_calculated_probability}%</span></div>
+                            <div className="text-slate-400">Kelly Criteria: <span className="text-slate-200">{analysis.value_assessment?.kelly_criterion_suggestion}%</span></div>
                           </div>
 
                           <div className="bg-slate-800/50 p-3 rounded-lg text-xs text-slate-300 leading-relaxed italic border border-slate-700/30">
