@@ -269,8 +269,8 @@ export default function App() {
       JSON SCHEMA:
       {
         "match_analysis": {
-          "home_team_form": "string (Summary of recent performance using the last 5 matches, W for win, D for draw, L for loss)",
-          "away_team_form": "string (Summary of recent performance using the last 5 matches, W for win, D for draw, L for loss)",
+          "home_team_last_5": [{ "opponent": "string", "score": "string", "result": "W/L/D" }],
+          "away_team_last_5": [{ "opponent": "string", "score": "string", "result": "W/L/D" }],
           "tactical_matchup": "string (1 sentence on how styles clash)"
         },
         "prediction": {
@@ -297,7 +297,7 @@ export default function App() {
         Research the upcoming match: ${event.title} (${event.description}).
         
         Find the following specific information:
-        1. Recent Form (Last 5 matches, W for win, D for draw, L for loss) for both teams as of ${today}.
+        1. Recent Form (Last 5 matches) for both teams. List each match with Opponent, Score, and Result.
         2. Key Injuries and Suspensions.
         3. Head-to-Head record (Last 5 meetings).
         4. Motivation/Context (League standings, Cup relevance).
@@ -630,12 +630,30 @@ export default function App() {
                           </div>
 
                           {/* Team Form Section */}
-                          <div className="space-y-2 mt-2">
-                            <div className="text-xs">
-                              <span className="text-slate-400 font-medium">Home Form:</span> <span className="text-slate-300">{analysis.match_analysis?.home_team_form}</span>
+                          <div className="grid grid-cols-2 gap-4 mt-3">
+                            <div>
+                              <div className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold mb-1">Home Form</div>
+                              <div className="space-y-1">
+                                {analysis.match_analysis?.home_team_last_5?.map((match, i) => (
+                                  <div key={i} className="flex justify-between items-center text-xs bg-slate-800/30 p-1.5 rounded border border-slate-700/30">
+                                    <span className={`font-bold w-4 ${match.result === 'W' ? 'text-emerald-400' : match.result === 'L' ? 'text-rose-400' : 'text-slate-400'}`}>{match.result}</span>
+                                    <span className="text-slate-300 truncate flex-1 mx-2 text-[10px]">{match.opponent}</span>
+                                    <span className="text-slate-400 font-mono text-[10px]">{match.score}</span>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
-                            <div className="text-xs">
-                              <span className="text-slate-400 font-medium">Away Form:</span> <span className="text-slate-300">{analysis.match_analysis?.away_team_form}</span>
+                            <div>
+                              <div className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold mb-1">Away Form</div>
+                              <div className="space-y-1">
+                                {analysis.match_analysis?.away_team_last_5?.map((match, i) => (
+                                  <div key={i} className="flex justify-between items-center text-xs bg-slate-800/30 p-1.5 rounded border border-slate-700/30">
+                                    <span className={`font-bold w-4 ${match.result === 'W' ? 'text-emerald-400' : match.result === 'L' ? 'text-rose-400' : 'text-slate-400'}`}>{match.result}</span>
+                                    <span className="text-slate-300 truncate flex-1 mx-2 text-[10px]">{match.opponent}</span>
+                                    <span className="text-slate-400 font-mono text-[10px]">{match.score}</span>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
                           </div>
 
@@ -694,7 +712,8 @@ export default function App() {
               );
             })}
           </div>
-        )}
+        )
+        }
       </main>
 
       {/* Footer */}
