@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   XCircle,
   BrainCircuit,
+  Zap,
   Trophy,
   Calendar,
   ChevronDown,
@@ -571,7 +572,7 @@ export default function App() {
                     {/* If we have a group item title (e.g. for Winner markets), show it */}
                     {market.groupItemTitle && market.groupItemTitle !== event.title && (
                       <div className="mt-2 text-sm text-indigo-300 font-medium">
-                        {market.groupItemTitle}
+                        {event.title}
                       </div>
                     )}
                   </div>
@@ -669,8 +670,8 @@ export default function App() {
                             </>
                           ) : (
                             <>
-                              <BrainCircuit className="w-4 h-4" />
-                              Analyze with Gemini AI
+                              <Zap className="w-4 h-4" />
+                              Analyze with AI
                             </>
                           )}
                         </button>
