@@ -245,7 +245,7 @@ export default function App() {
       Before generating the JSON output, you must internally process the following variables. If specific data is missing, make reasonable estimates based on team tier and historical norms, but prioritize recent data.
 
       1. RECENT FORM & MOMENTUM (High Priority):
-        - Analyze the last 5 matches for both teams, applying a time-decay weight (most recent matches matter most).
+        - Analyze the last 5 matches for both teams, applying a time-decay weight (most recent matches matter most). Do a web search to valdate the results and to ensure they are accurate.
         - Compare Home vs. Away performance splits (e.g., Is the home team a fortress? Is the away team poor on the road?).
         - Look for variance in scoring: Are they winning consistently or relying on lucky late goals?
 
@@ -268,9 +268,9 @@ export default function App() {
       JSON SCHEMA:
       {
         "match_analysis": {
-          "home_team_form": "string (Summary of recent performance, e.g., 'W-D-W-L-W, strong home attack')",
-          "away_team_form": "string (Summary of recent performance, e.g., 'L-L-D-L-W, weak away defense')",
-          "tactical_matchup": "string (1 sentence on how styles clash, e.g., 'High press vs. Low block')"
+          "home_team_form": "string (Summary of recent performance using the last 5 matches, W for win, D for draw, L for loss)",
+          "away_team_form": "string (Summary of recent performance using the last 5 matches, W for win, D for draw, L for loss)",
+          "tactical_matchup": "string (1 sentence on how styles clash)"
         },
         "prediction": {
           "outcome": "string (e.g., 'Arsenal Win' or 'Over 2.5 Goals')",
@@ -289,39 +289,81 @@ export default function App() {
       }
     `;
 
-      const userPrompt = `
-        Analyze this Soccer Market:
-        Event: ${event.title}
-        League/Category: ${event.description || "Soccer"}
-        Date: ${event.startDate}
-        Market Question: ${market.question}
+      // --- STEP 1: RESEARCH PHASE ---
+      // Goal: Gather verified facts using Google Search
+      const today = new Date().toISOString().split("T")[0];
+      const researchPrompt = `
+        Research the upcoming match: ${event.title} (${event.description}).
         
-        The possible outcomes and their current market probabilities (implied odds) are:
-        ${outcomeStr}
+        Find the following specific information:
+        1. Recent Form (Last 5 matches, W for win, D for draw, L for loss) for both teams as of ${today}.
+        2. Key Injuries and Suspensions.
+        3. Head-to-Head record (Last 5 meetings).
+        4. Motivation/Context (League standings, Cup relevance).
         
-        Which SPECIFIC outcome from the list above is mispriced? Focus on value.
+        Provide a concise summary of these facts. Do NOT make predictions yet. Validate all data to ensure it is accurate.
       `;
 
-      const response = await fetch(
+      const researchResponse = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: userPrompt }] }],
+            contents: [{ parts: [{ text: researchPrompt }] }],
+            tools: [{ googleSearch: {} }]
+          })
+        }
+      );
+
+      const researchResult = await researchResponse.json();
+      if (researchResult.error) throw new Error("Research failed: " + researchResult.error.message);
+
+      const researchData = researchResult.candidates[0].content.parts[0].text;
+
+      // --- STEP 2: ANALYSIS PHASE ---
+      // Goal: Analyze the market using the verified research data
+      const analysisPrompt = `
+        Analyze this Soccer Market:
+        Event: ${event.title}
+        League/Category: ${event.description || "Soccer"}
+        Date: ${today}
+        Market Question: ${market.question}
+        
+        The possible outcomes and their current market probabilities (implied odds) are:
+        ${outcomeStr}
+        
+        VERIFIED RESEARCH DATA:
+        ${researchData}
+        
+        Based on the verified research above, which SPECIFIC outcome is mispriced? Focus on value.
+      `;
+
+      const analysisResponse = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: analysisPrompt }] }],
             systemInstruction: { parts: [{ text: systemPrompt }] },
+            // No tools for the analysis step to ensure strict JSON adherence and focus
             generationConfig: { responseMimeType: "application/json" }
           })
         }
       );
 
-      const result = await response.json();
+      const result = await analysisResponse.json();
 
       if (result.error) {
         throw new Error(result.error.message);
       }
 
-      const aiText = result.candidates[0].content.parts[0].text;
+      let aiText = result.candidates[0].content.parts[0].text;
+
+      // Clean up markdown code blocks if present
+      aiText = aiText.replace(/```json\n?|\n?```/g, "").trim();
+
       const analysisData = JSON.parse(aiText);
 
       setAnalyses(prev => ({
@@ -456,7 +498,7 @@ export default function App() {
         {loading && markets.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 gap-4">
             <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-slate-400 animate-pulse">Scanning Polymarket Chain...</p>
+            <p className="text-slate-400 animate-pulse">Scanning Polymarket...</p>
           </div>
         ) : error ? (
           <div className="bg-rose-950/30 border border-rose-900 rounded-xl p-6 text-center max-w-lg mx-auto">
@@ -566,10 +608,34 @@ export default function App() {
 
                           <ValueIndicator type={analysis.value_assessment?.market_status} edge={analysis.value_assessment?.edge_percentage} />
 
-                          <div className="flex justify-between items-center text-sm border-t border-slate-700/50 pt-2 mt-2">
-                            <div className="text-slate-400">Target: <span className="text-slate-200">{analysis.prediction?.outcome}</span></div>
-                            <div className="text-slate-400">Est: <span className="text-slate-200">{analysis.value_assessment?.my_calculated_probability}%</span></div>
-                            <div className="text-slate-400">Kelly Criteria: <span className="text-slate-200">{analysis.value_assessment?.kelly_criterion_suggestion}%</span></div>
+                          {/* Key Metrics Grid */}
+                          <div className="grid grid-cols-2 gap-3 mt-3">
+                            <div className="bg-slate-800/50 p-2 rounded border border-slate-700/50">
+                              <div className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Target</div>
+                              <div className="text-sm font-medium text-slate-200 truncate" title={analysis.prediction?.outcome}>{analysis.prediction?.outcome}</div>
+                            </div>
+                            <div className="bg-slate-800/50 p-2 rounded border border-slate-700/50">
+                              <div className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Est. Prob</div>
+                              <div className="text-sm font-medium text-slate-200">{analysis.value_assessment?.my_calculated_probability}%</div>
+                            </div>
+                            <div className="bg-slate-800/50 p-2 rounded border border-slate-700/50">
+                              <div className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Kelly</div>
+                              <div className="text-sm font-medium text-slate-200">{(analysis.value_assessment?.kelly_criterion_suggestion * 100).toFixed(1)}%</div>
+                            </div>
+                            <div className="bg-slate-800/50 p-2 rounded border border-slate-700/50">
+                              <div className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Score</div>
+                              <div className="text-sm font-medium text-slate-200">{analysis.prediction?.predicted_scoreline}</div>
+                            </div>
+                          </div>
+
+                          {/* Team Form Section */}
+                          <div className="space-y-2 mt-2">
+                            <div className="text-xs">
+                              <span className="text-slate-400 font-medium">Home Form:</span> <span className="text-slate-300">{analysis.match_analysis?.home_team_form}</span>
+                            </div>
+                            <div className="text-xs">
+                              <span className="text-slate-400 font-medium">Away Form:</span> <span className="text-slate-300">{analysis.match_analysis?.away_team_form}</span>
+                            </div>
                           </div>
 
                           <div className="bg-slate-800/50 p-3 rounded-lg text-xs text-slate-300 leading-relaxed italic border border-slate-700/30">
