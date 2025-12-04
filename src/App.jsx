@@ -305,8 +305,10 @@ export default function App() {
         Research the upcoming match: ${event.title} (${event.description}).
         
         Find the following specific information:
-        1. Recent Form (Last 5 matches) for both teams as of ${today}. There might have been a match played today itself, so ensure you throughly check the last 5 matches.
-           - CRITICAL: List each match with Date, Opponent, EXACT Score (e.g. 2-1), and Result (W/L/D).
+        1. Recent Form (Last 5 matches) for both teams as of ${today}.
+           - CRITICAL: Check specifically for matches played YESTERDAY or TODAY. Do not miss them.
+           - Include ALL competitions (League, Cup, Friendlies).
+           - List each match with Date, Opponent, EXACT Score (e.g. 2-1), and Result (W/L/D).
            - Do NOT return "N/A" for scores. If the match was played, find the score.
         2. Key Injuries and Suspensions.
         3. Head-to-Head record (Last 5 meetings).
