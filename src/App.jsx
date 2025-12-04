@@ -16,7 +16,8 @@ import {
   BarChart3,
   ExternalLink,
   Wifi,
-  WifiOff
+  WifiOff,
+  Globe
 } from 'lucide-react';
 
 // --- Configuration ---
@@ -246,9 +247,10 @@ export default function App() {
       Before generating the JSON output, you must internally process the following variables. If specific data is missing, make reasonable estimates based on team tier and historical norms, but prioritize recent data.
 
       1. RECENT FORM & MOMENTUM (High Priority):
-        - Analyze the last 5 matches for both teams, applying a time-decay weight (most recent matches matter most). Do a web search to valdate the results and to ensure they are accurate.
-        - Compare Home vs. Away performance splits (e.g., Is the home team a fortress? Is the away team poor on the road?).
-        - Look for variance in scoring: Are they winning consistently or relying on lucky late goals?
+        - Analyze the last 5 matches for both teams.
+        - CRITICAL: You MUST provide the exact scoreline for every match. Do not use "N/A". If a match happened, a score exists. Find it.
+        - Compare Home vs. Away performance splits.
+        - Look for variance in scoring.
 
       2. ADVANCED METRICS (If data available or inferred):
         - xG (Expected Goals) vs. Actual Goals: Identify regression to the mean candidates (e.g., a team overperforming their xG is likely to cool off).
@@ -285,7 +287,12 @@ export default function App() {
           "kelly_criterion_suggestion": "number (0-1, suggested stake size fraction, optional)"
         },
         "confidence_rating": "number (1-10, based on data availability and volatility)",
-        "primary_reasoning": "string (Concise, data-driven explanation focusing on the discrepancy between recent form and current odds)",
+        "key_insights": [
+          "string (e.g., 'Home team averages 2.4 goals/game at home')",
+          "string (e.g., 'Away team has lost 4 of last 5 away matches')",
+          "string (e.g., 'H2H: Home team has won 3 consecutive meetings')",
+          "string (e.g., 'Implied Probability 45% vs Model 60%')"
+        ],
         "risk_factors": ["string", "string"]
       }
     `;
@@ -293,11 +300,14 @@ export default function App() {
       // --- STEP 1: RESEARCH PHASE ---
       // Goal: Gather verified facts using Google Search
       const today = new Date().toISOString().split("T")[0];
+
       const researchPrompt = `
         Research the upcoming match: ${event.title} (${event.description}).
         
         Find the following specific information:
-        1. Recent Form (Last 5 matches) for both teams. List each match with Opponent, Score, and Result.
+        1. Recent Form (Last 5 matches) for both teams as of ${today}. There might have been a match played today itself, so ensure you throughly check the last 5 matches.
+           - CRITICAL: List each match with Date, Opponent, EXACT Score (e.g. 2-1), and Result (W/L/D).
+           - Do NOT return "N/A" for scores. If the match was played, find the score.
         2. Key Injuries and Suspensions.
         3. Head-to-Head record (Last 5 meetings).
         4. Motivation/Context (League standings, Cup relevance).
@@ -348,7 +358,6 @@ export default function App() {
           body: JSON.stringify({
             contents: [{ parts: [{ text: analysisPrompt }] }],
             systemInstruction: { parts: [{ text: systemPrompt }] },
-            // No tools for the analysis step to ensure strict JSON adherence and focus
             generationConfig: { responseMimeType: "application/json" }
           })
         }
@@ -366,6 +375,11 @@ export default function App() {
       aiText = aiText.replace(/```json\n?|\n?```/g, "").trim();
 
       const analysisData = JSON.parse(aiText);
+
+      // Add Metadata
+      analysisData.metadata = {
+        dataSource: 'Google Search'
+      };
 
       setAnalyses(prev => ({
         ...prev,
@@ -599,7 +613,13 @@ export default function App() {
                       <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                         <div className="bg-slate-900/80 rounded-xl p-4 border border-slate-700 space-y-3">
                           <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">AI Assessment</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">AI Assessment</span>
+                              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-900/30 border border-blue-800 text-[10px] text-blue-400">
+                                <Globe className="w-3 h-3" />
+                                <span>Web Search</span>
+                              </div>
+                            </div>
                             <div className="flex gap-1">
                               {[...Array(5)].map((_, i) => (
                                 <div key={i} className={`w-1.5 h-1.5 rounded-full ${i < (analysis.confidence_rating / 2) ? 'bg-indigo-500' : 'bg-slate-700'}`} />
@@ -657,8 +677,16 @@ export default function App() {
                             </div>
                           </div>
 
-                          <div className="bg-slate-800/50 p-3 rounded-lg text-xs text-slate-300 leading-relaxed italic border border-slate-700/30">
-                            "{analysis.primary_reasoning}"
+                          <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700/30">
+                            <div className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold mb-2">Key Insights</div>
+                            <ul className="space-y-1.5">
+                              {analysis.key_insights?.map((insight, i) => (
+                                <li key={i} className="flex items-start gap-2 text-xs text-slate-300 leading-relaxed">
+                                  <span className="mt-1 w-1 h-1 rounded-full bg-indigo-400 shrink-0" />
+                                  <span>{insight}</span>
+                                </li>
+                              ))}
+                            </ul>
                           </div>
 
                           <div className="flex flex-wrap gap-1 mt-2">
@@ -719,8 +747,8 @@ export default function App() {
       {/* Footer */}
       <footer className="border-t border-slate-800 bg-slate-900 mt-12 py-8">
         <div className="max-w-7xl mx-auto px-6 text-center">
-          <p className="text-slate-500 text-sm mb-2">
-            Powered by <span className="text-slate-300 font-semibold">Google Gemini</span> & <span className="text-slate-300 font-semibold">Polymarket Gamma API</span>
+          <p className="text-slate-500 mb-4">
+            Powered by <span className="text-indigo-400 font-semibold">Gemini 2.5</span> & <span className="text-indigo-400 font-semibold">Polymarket</span>
           </p>
           <p className="text-slate-600 text-xs max-w-2xl mx-auto">
             Disclaimer: This application is for educational and entertainment purposes only.
