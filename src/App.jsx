@@ -226,16 +226,17 @@ export default function App() {
     }
   };
 
-  const analyzeMarketWithGemini = async (event, market, outcomes, prices) => {
+  const analyzeMarketWithGemini = async (event, market, oddsData) => {
     if (analyzing[market.id]) return;
 
     setAnalyzing(prev => ({ ...prev, [market.id]: true }));
 
     try {
-      const outcomeStr = outcomes.map((outcome, idx) => {
-        const price = prices ? prices[idx] : 0;
-        return `${outcome}: ${toPercent(price)}%`;
-      }).join(", ");
+      const outcomeStr = `
+      Home (${oddsData.homeTeam}): ${toPercent(oddsData.homePrice)}%,
+      Draw: ${toPercent(oddsData.drawPrice)}%,
+      Away (${oddsData.awayTeam}): ${toPercent(oddsData.awayPrice)}%
+    `;
 
       const systemPrompt = `
       You are an elite Sports Handicapper and Quantitative Data Scientist specializing in football (soccer) markets.
@@ -529,42 +530,61 @@ export default function App() {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
             {filteredMarkets.map((event) => {
+              // --- 1X2 PARSING LOGIC ---
+              const titleParts = event.title.split(/ vs\.? /i);
+              const homeTeam = titleParts[0] ? titleParts[0].trim() : "Home";
+              const awayTeam = titleParts[1] ? titleParts[1].trim() : "Away";
+
+              let homePrice = null;
+              let drawPrice = null;
+              let awayPrice = null;
+              let homeMarketId = null;
+
+              if (event.markets && Array.isArray(event.markets)) {
+                event.markets.forEach(market => {
+                  const groupTitle = market.groupItemTitle || "";
+                  const question = market.question || "";
+
+                  // Parse prices
+                  let prices = [];
+                  try {
+                    if (typeof market.outcomePrices === 'string') {
+                      prices = JSON.parse(market.outcomePrices);
+                    } else if (Array.isArray(market.outcomePrices)) {
+                      prices = market.outcomePrices;
+                    }
+                  } catch (e) {
+                    prices = ["0", "0"];
+                  }
+                  const yesPrice = prices[0];
+
+                  // Identify Market Type
+                  if (groupTitle === homeTeam || question.includes(`${homeTeam} win`)) {
+                    homePrice = yesPrice;
+                    homeMarketId = market.id;
+                  } else if (groupTitle === awayTeam || question.includes(`${awayTeam} win`)) {
+                    awayPrice = yesPrice;
+                  } else if (groupTitle.includes("Draw") || question.includes("end in a draw")) {
+                    drawPrice = yesPrice;
+                  }
+                });
+              }
+
+              // Use the home market ID for the "Analyze" button key, or event ID if not found
+              // We use the first market as a fallback for the "market" object passed to AI
               const market = event.markets[0];
+              const analysisKey = homeMarketId || event.id;
+              const analysis = analyses[analysisKey];
+              const isAnalyzing = analyzing[analysisKey];
 
-              // --- PARSING LOGIC START ---
-              // 1. Parse Outcomes Labels
-              let outcomes = [];
-              try {
-                outcomes = JSON.parse(market.outcomes);
-                if (!Array.isArray(outcomes)) outcomes = ["Yes", "No"];
-              } catch (e) {
-                // If parsing fails, fall back to "Yes"/"No" or the group item title
-                outcomes = ["Yes", "No"];
-              }
-
-              // 2. Parse Outcome Prices
-              // IMPORTANT: The API returns outcomePrices as a JSON STRING, NOT an Array.
-              let prices = [];
-              try {
-                if (typeof market.outcomePrices === 'string') {
-                  prices = JSON.parse(market.outcomePrices);
-                } else if (Array.isArray(market.outcomePrices)) {
-                  prices = market.outcomePrices;
-                }
-              } catch (e) {
-                console.warn("Error parsing prices", e);
-                prices = [];
-              }
-              // --- PARSING LOGIC END ---
-
-              const analysis = analyses[market.id];
-              const isAnalyzing = analyzing[market.id];
-              const outcomeCount = outcomes.length;
-
-              // Grid Class Logic
-              let gridClass = "grid-cols-2";
-              if (outcomeCount === 3) gridClass = "grid-cols-3";
-              if (outcomeCount > 3) gridClass = "grid-cols-2 sm:grid-cols-3";
+              // Construct odds data for display and AI
+              const oddsData = {
+                homeTeam,
+                awayTeam,
+                homePrice: homePrice || 0,
+                drawPrice: drawPrice || 0,
+                awayPrice: awayPrice || 0
+              };
 
               return (
                 <div key={event.id} className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden hover:border-indigo-500/50 transition-all duration-300 shadow-lg group">
@@ -575,39 +595,35 @@ export default function App() {
                         <Trophy className="w-3 h-3" />
                         <span className="truncate max-w-[150px]">{event.description || "Soccer"}</span>
                       </div>
-                      <Badge variant="blue">Liquid: {formatMoney(market.liquidity)}</Badge>
+                      <Badge variant="blue">Liquid: {formatMoney(event.liquidity)}</Badge>
                     </div>
                     <h3 className="text-lg font-bold text-white leading-tight mb-2 group-hover:text-indigo-300 transition-colors">
-                      {/* If the question is more descriptive than title, use it, otherwise use title */}
                       {event.title}
                     </h3>
                     <div className="flex items-center gap-2 text-xs text-slate-500">
                       <Calendar className="w-3 h-3" />
                       {formatDate(event.endDate)}
                     </div>
-                    {/* If we have a group item title (e.g. for Winner markets), show it */}
-                    {market.groupItemTitle && market.groupItemTitle !== event.title && (
-                      <div className="mt-2 text-sm text-indigo-300 font-medium">
-                        {event.title}
-                      </div>
-                    )}
                   </div>
 
-                  {/* Market Odds */}
+                  {/* Market Odds (1X2 Row) */}
                   <div className="p-5 space-y-4">
-                    <div className={`grid ${gridClass} gap-2`}>
-                      {outcomes.map((outcome, idx) => {
-                        const price = prices && prices[idx] ? prices[idx] : 0;
-                        const percent = toPercent(price);
-                        return (
-                          <div key={idx} className="bg-slate-900 rounded-lg p-2 text-center border border-slate-700 hover:border-slate-600 transition-colors flex flex-col justify-center min-h-[70px]">
-                            <div className="text-xs text-slate-400 mb-1 line-clamp-2 leading-tight" title={outcome}>
-                              {outcome}
-                            </div>
-                            <div className="text-lg font-bold text-indigo-400">{percent}%</div>
-                          </div>
-                        );
-                      })}
+                    <div className="grid grid-cols-3 gap-2">
+                      {/* Home */}
+                      <div className="bg-slate-900 rounded-lg p-2 text-center border border-slate-700 hover:border-slate-600 transition-colors flex flex-col justify-center min-h-[70px]">
+                        <div className="text-xs text-slate-400 mb-1 line-clamp-1" title={homeTeam}>{homeTeam}</div>
+                        <div className="text-lg font-bold text-indigo-400">{toPercent(oddsData.homePrice)}%</div>
+                      </div>
+                      {/* Draw */}
+                      <div className="bg-slate-900 rounded-lg p-2 text-center border border-slate-700 hover:border-slate-600 transition-colors flex flex-col justify-center min-h-[70px]">
+                        <div className="text-xs text-slate-400 mb-1">Draw</div>
+                        <div className="text-lg font-bold text-slate-300">{oddsData.drawPrice ? toPercent(oddsData.drawPrice) + '%' : '-'}</div>
+                      </div>
+                      {/* Away */}
+                      <div className="bg-slate-900 rounded-lg p-2 text-center border border-slate-700 hover:border-slate-600 transition-colors flex flex-col justify-center min-h-[70px]">
+                        <div className="text-xs text-slate-400 mb-1 line-clamp-1" title={awayTeam}>{awayTeam}</div>
+                        <div className="text-lg font-bold text-indigo-400">{oddsData.awayPrice ? toPercent(oddsData.awayPrice) + '%' : '-'}</div>
+                      </div>
                     </div>
 
                     {/* Analysis Section */}
@@ -703,7 +719,7 @@ export default function App() {
                     ) : (
                       <div className="mt-2">
                         <button
-                          onClick={() => analyzeMarketWithGemini(event, market, outcomes, prices)}
+                          onClick={() => analyzeMarketWithGemini(event, market, oddsData)}
                           disabled={isAnalyzing}
                           className={`w-full py-3 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2
                             ${isAnalyzing
